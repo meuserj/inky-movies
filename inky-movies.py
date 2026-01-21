@@ -21,8 +21,8 @@ RSS_URL = f"https://letterboxd.com/{USERNAME}/rss/"
 # Settings
 CACHE_DIR = "poster_cache"
 MAX_MOVIES = 20
-SLIDE_DURATION = 3600  # How long to show each movie (in seconds). Default: 1 hour.
-RSS_REFRESH_INTERVAL = 4 # How many slides to show before checking RSS for updates.
+SLIDE_DURATION = 10  # How long to show each movie (in seconds). Default: 1 hour.
+# SLIDE_DURATION = 3600  # How long to show each movie (in seconds). Default: 1 hour.
 
 # --- 2. DATA STRUCTURES ---
 class Movie(NamedTuple):
@@ -222,7 +222,27 @@ def display_movie(movie: Movie):
     except Exception as e:
         print(f"❌ Display Error: {e}")
 
-# --- 7. DAEMON LOOP (FLATTENED) ---
+STATE_FILE = "inky_state.json"
+def save_state(movie: Movie):
+    """Saves the unique link of the currently displayed movie."""
+    try:
+        with open(STATE_FILE, "w") as f:
+            json.dump({"last_link": movie.link, "timestamp": time.time()}, f)
+    except Exception as e:
+        print(f"⚠️ Failed to save state: {e}")
+
+def load_last_link() -> str | None:
+    """Returns the link of the last movie displayed before shutdown."""
+    if not os.path.exists(STATE_FILE):
+        return None
+    try:
+        with open(STATE_FILE, "r") as f:
+            data = json.load(f)
+            return data.get("last_link")
+    except:
+        return None
+
+# --- 7. DAEMON LOOP (WITH PERSISTENCE) ---
 def main():
     print("🚀 Inky Movies Daemon Started")
     print(f"   Settings: {MAX_MOVIES} posters, {SLIDE_DURATION}s duration")
@@ -230,19 +250,19 @@ def main():
     playlist: list[Movie] = []
     current_index = 0
     
-    # Track when we last checked for updates
     last_rss_check_time = 0.0
-    # Check for new movies every 4 hours (regardless of how many slides shown)
     rss_check_interval = 4 * 3600  
     
+    # 1. LOAD STATE ON STARTUP
+    last_seen_link = load_last_link()
+    if last_seen_link:
+        print("   📂 Found previous state. Attempting to resume...")
+
     while True:
         try:
             now = time.time()
             
             # --- STEP 1: CHECK FOR UPDATES ---
-            # We check if:
-            # A) It's been > 4 hours since last check
-            # B) OR the playlist is empty (first run)
             if (now - last_rss_check_time > rss_check_interval) or not playlist:
                 print(f"⏰ Checking RSS for updates... (Last: {time.ctime(last_rss_check_time)})")
                 new_list = get_movie_list()
@@ -250,15 +270,51 @@ def main():
                 if new_list:
                     print(f"   ✅ Fetched {len(new_list)} movies.")
                     sync_cache(new_list)
-                    playlist = new_list
-                    last_rss_check_time = now
                     
-                    # CRITICAL FIX:
-                    # If we are currently at index 5, and the list refreshes, 
-                    # we want to stay at index 5 (or 0 if the list shrank).
-                    # We do NOT reset to 0 automatically.
-                    if current_index >= len(playlist):
-                        current_index = 0
+                    # LOGIC: HANDLE PLAYLIST UPDATES & RESUMING
+                    if playlist:
+                        # CASE A: Live Update (Script was already running)
+                        # Find where the *next* movie moved to
+                        target_next_movie = playlist[current_index]
+                        playlist = new_list
+                        
+                        new_index = -1
+                        for i, m in enumerate(playlist):
+                            if m.link == target_next_movie.link:
+                                new_index = i
+                                break
+                        
+                        if new_index != -1:
+                            if new_index != current_index:
+                                print(f"   ➡️ Offset Adjustment: Index moved {current_index} -> {new_index}")
+                            current_index = new_index
+                        else:
+                            print("   ⚠️ Target movie dropped from playlist. Resetting to 0.")
+                            current_index = 0
+                            
+                    else:
+                        # CASE B: Fresh Start (Script just booted)
+                        playlist = new_list
+                        
+                        if last_seen_link:
+                            # Search for the movie we saw last time
+                            found_index = -1
+                            for i, m in enumerate(playlist):
+                                if m.link == last_seen_link:
+                                    found_index = i
+                                    break
+                            
+                            if found_index != -1:
+                                # Start at the movie *after* the one we last saw
+                                print(f"   resume found: '{playlist[found_index].title}'. Starting at next slide.")
+                                current_index = (found_index + 1) % len(playlist)
+                            else:
+                                print("   ⚠️ Last seen movie fell off the RSS feed. Starting fresh at 0.")
+                                current_index = 0
+                        else:
+                            current_index = 0
+
+                    last_rss_check_time = now
                 else:
                     print("   ⚠️ RSS fetch failed. Keeping existing playlist.")
 
@@ -269,12 +325,16 @@ def main():
                 continue
 
             # --- STEP 3: DISPLAY CURRENT MOVIE ---
+            if current_index >= len(playlist): current_index = 0
+
             current_movie = playlist[current_index]
             print(f"\n[{current_index + 1}/{len(playlist)}] Processing: {current_movie.title}")
             display_movie(current_movie)
             
+            # --- NEW STEP: SAVE STATE ---
+            save_state(current_movie)
+            
             # --- STEP 4: ADVANCE INDEX ---
-            # Move to the next movie. If at the end, wrap around to 0.
             current_index = (current_index + 1) % len(playlist)
             
             # --- STEP 5: SLEEP ---
