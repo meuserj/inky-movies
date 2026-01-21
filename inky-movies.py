@@ -21,8 +21,8 @@ RSS_URL = f"https://letterboxd.com/{USERNAME}/rss/"
 # Settings
 CACHE_DIR = "poster_cache"
 MAX_MOVIES = 20
-SLIDE_DURATION = 10  # How long to show each movie (in seconds). Default: 1 hour.
-# SLIDE_DURATION = 3600  # How long to show each movie (in seconds). Default: 1 hour.
+# SLIDE_DURATION = 10  # How long to show each movie (in seconds). Default: 1 hour.
+SLIDE_DURATION = 3600  # How long to show each movie (in seconds). Default: 1 hour.
 
 # --- 2. DATA STRUCTURES ---
 class Movie(NamedTuple):
