@@ -1,0 +1,7 @@
+# Use the -r flag to include the base requirements automatically
+-r requirements.txt
+
+# Hardware-specific libraries
+inky
+rpi.gpio
+spidev
