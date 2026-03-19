@@ -13,10 +13,7 @@ from typing import Protocol, cast, NamedTuple, Optional
 from PIL import Image
 from dotenv import load_dotenv
 
-try:
-    import RPi.GPIO as GPIO # pyright: ignore[reportMissingImports]
-except (ImportError, RuntimeError):
-    GPIO = None # Will be None if not on Pi or library not installed
+
 
 # --- 1. CONFIGURATION ---
 _ = load_dotenv()
@@ -61,24 +58,42 @@ except (ImportError, RuntimeError):
     print("⚠️ Inky board not found. Using Mock display.")
 
 rotate_event: Optional[threading.Event] = None
-if not isinstance(board, MockBoard) and GPIO:
+if not isinstance(board, MockBoard):
     try:
-        rotate_event = threading.Event()
-
-        def button_callback(pin):
-            print("Button press detected")
-            if rotate_event:
-                rotate_event.set()
+        import datetime
+        import gpiod
+        import gpiodevice
+        from gpiod.line import Bias, Direction, Edge
 
         BUTTON_PIN = 5  # GPIO 5, corresponds to button 'A'
-        GPIO.setmode(GPIO.BCM)
-        GPIO.setup(BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-        GPIO.add_event_detect(BUTTON_PIN, GPIO.FALLING, callback=button_callback, bouncetime=300)
+
+        chip = gpiodevice.find_chip_by_platform()
+        line_settings = gpiod.LineSettings(
+                direction=Direction.INPUT,
+                bias=Bias.PULL_UP,
+                edge_detection=Edge.FALLING
+            )
+        line_config = { chip.line_offset_from_id(BUTTON_PIN): line_settings }
+        request = chip.request_lines(consumer="inky-movies", config=line_config)
+
+        rotate_event = threading.Event()
+
+        def button_waiter():
+            while True:
+                # Block until an edge event occurs (or a long timeout)
+                if request.wait_edge_events(timeout=datetime.timedelta(days=1)):
+                    events = request.read_edge_events()
+                    if events:
+                        print("Button press detected")
+                        rotate_event.set()
+
+        button_thread = threading.Thread(target=button_waiter, daemon=True)
+        button_thread.start()
         print("   🔘 Button listener active on pin 5")
 
-    except RuntimeError as e:
+    except (ImportError, RuntimeError, FileNotFoundError) as e:
         rotate_event = None
-        print(f"⚠️ GPIO setup failed: {e}. Button functionality disabled.")
+        print(f"⚠️ Could not set up button listener using gpiod: {e}. Button functionality disabled.")
 
 # --- 4. POSTER FINDER LOGIC (Reuse from before) ---
 def get_poster_from_tmdb(title: str, year: str) -> str:
@@ -382,9 +397,4 @@ def main():
             time.sleep(60)
 
 if __name__ == "__main__":
-    try:
-        main()
-    finally:
-        if GPIO:
-            GPIO.cleanup()
-            print("\n🧹 GPIO cleaned up.")
+    main()

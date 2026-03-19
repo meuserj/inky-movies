@@ -3,5 +3,6 @@
 
 # Hardware-specific libraries
 inky
-rpi.gpio
+gpiod
+gpiodevice
 spidev
