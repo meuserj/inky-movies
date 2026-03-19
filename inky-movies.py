@@ -7,8 +7,9 @@ import glob
 import requests
 import urllib.parse
 import xml.etree.ElementTree as ET
+import threading
 from bs4 import BeautifulSoup
-from typing import Protocol, cast, NamedTuple
+from typing import Protocol, cast, NamedTuple, Optional
 from PIL import Image
 from dotenv import load_dotenv
 
@@ -46,13 +47,28 @@ class MockBoard:
     def show(self) -> None: pass
 
 board: InkyBoard
+rotate_event: Optional[threading.Event] = None
 try:
     from inky.auto import auto  # pyright: ignore[reportMissingImports]
+    import RPi.GPIO as GPIO # pyright: ignore[reportMissingImports]
     board = cast(InkyBoard, auto())
     print("✅ Hardware found")
-except ImportError:
+
+    rotate_event = threading.Event()
+    def button_callback(pin):
+        print("Button press detected")
+        if rotate_event:
+            rotate_event.set()
+
+    BUTTON_PIN = 5  # GPIO 5, corresponds to button 'A'
+    GPIO.setmode(GPIO.BCM)
+    GPIO.setup(BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+    GPIO.add_event_detect(BUTTON_PIN, GPIO.FALLING, callback=button_callback, bouncetime=300)
+    print("   🔘 Button listener active on pin 5")
+
+except (ImportError, RuntimeError):
     board = MockBoard()
-    print("⚠️ Mock loaded")
+    print("⚠️ Mock loaded, button functionality disabled.")
 
 # --- 4. POSTER FINDER LOGIC (Reuse from before) ---
 def get_poster_from_tmdb(title: str, year: str) -> str:
@@ -338,8 +354,15 @@ def main():
             current_index = (current_index + 1) % len(playlist)
             
             # --- STEP 5: SLEEP ---
-            print(f"   💤 Sleeping for {SLIDE_DURATION} seconds...")
-            time.sleep(SLIDE_DURATION)
+            if rotate_event:
+                print(f"   💤 Sleeping for {SLIDE_DURATION} seconds (or until button press)...")
+                interrupted = rotate_event.wait(SLIDE_DURATION)
+                if interrupted:
+                    print("   🔘 Button pressed! Rotating image.")
+                    rotate_event.clear()
+            else:
+                print(f"   💤 Sleeping for {SLIDE_DURATION} seconds...")
+                time.sleep(SLIDE_DURATION)
             
         except KeyboardInterrupt:
             print("\n👋 Manual stop. Exiting.")
