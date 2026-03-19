@@ -13,6 +13,11 @@ from typing import Protocol, cast, NamedTuple, Optional
 from PIL import Image
 from dotenv import load_dotenv
 
+try:
+    import RPi.GPIO as GPIO # pyright: ignore[reportMissingImports]
+except (ImportError, RuntimeError):
+    GPIO = None # Will be None if not on Pi or library not installed
+
 # --- 1. CONFIGURATION ---
 _ = load_dotenv()
 USERNAME = os.getenv("LETTERBOXD_USERNAME", "")
@@ -56,9 +61,8 @@ except (ImportError, RuntimeError):
     print("⚠️ Inky board not found. Using Mock display.")
 
 rotate_event: Optional[threading.Event] = None
-if not isinstance(board, MockBoard):
+if not isinstance(board, MockBoard) and GPIO:
     try:
-        import RPi.GPIO as GPIO  # pyright: ignore[reportMissingImports]
         rotate_event = threading.Event()
 
         def button_callback(pin):
@@ -72,7 +76,7 @@ if not isinstance(board, MockBoard):
         GPIO.add_event_detect(BUTTON_PIN, GPIO.FALLING, callback=button_callback, bouncetime=300)
         print("   🔘 Button listener active on pin 5")
 
-    except (ImportError, RuntimeError) as e:
+    except RuntimeError as e:
         rotate_event = None
         print(f"⚠️ GPIO setup failed: {e}. Button functionality disabled.")
 
@@ -378,4 +382,9 @@ def main():
             time.sleep(60)
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    finally:
+        if GPIO:
+            GPIO.cleanup()
+            print("\n🧹 GPIO cleaned up.")
