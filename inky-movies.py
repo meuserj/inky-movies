@@ -47,28 +47,34 @@ class MockBoard:
     def show(self) -> None: pass
 
 board: InkyBoard
-rotate_event: Optional[threading.Event] = None
 try:
     from inky.auto import auto  # pyright: ignore[reportMissingImports]
-    import RPi.GPIO as GPIO # pyright: ignore[reportMissingImports]
     board = cast(InkyBoard, auto())
     print("✅ Hardware found")
-
-    rotate_event = threading.Event()
-    def button_callback(pin):
-        print("Button press detected")
-        if rotate_event:
-            rotate_event.set()
-
-    BUTTON_PIN = 5  # GPIO 5, corresponds to button 'A'
-    GPIO.setmode(GPIO.BCM)
-    GPIO.setup(BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-    GPIO.add_event_detect(BUTTON_PIN, GPIO.FALLING, callback=button_callback, bouncetime=300)
-    print("   🔘 Button listener active on pin 5")
-
 except (ImportError, RuntimeError):
     board = MockBoard()
-    print("⚠️ Mock loaded, button functionality disabled.")
+    print("⚠️ Inky board not found. Using Mock display.")
+
+rotate_event: Optional[threading.Event] = None
+if not isinstance(board, MockBoard):
+    try:
+        import RPi.GPIO as GPIO  # pyright: ignore[reportMissingImports]
+        rotate_event = threading.Event()
+
+        def button_callback(pin):
+            print("Button press detected")
+            if rotate_event:
+                rotate_event.set()
+
+        BUTTON_PIN = 5  # GPIO 5, corresponds to button 'A'
+        GPIO.setmode(GPIO.BCM)
+        GPIO.setup(BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+        GPIO.add_event_detect(BUTTON_PIN, GPIO.FALLING, callback=button_callback, bouncetime=300)
+        print("   🔘 Button listener active on pin 5")
+
+    except (ImportError, RuntimeError) as e:
+        rotate_event = None
+        print(f"⚠️ GPIO setup failed: {e}. Button functionality disabled.")
 
 # --- 4. POSTER FINDER LOGIC (Reuse from before) ---
 def get_poster_from_tmdb(title: str, year: str) -> str:
