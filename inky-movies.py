@@ -1,7 +1,9 @@
 # pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownArgumentType=false
 import io
 import json
+import math
 import os
+import random
 import signal
 import sys
 import time
@@ -301,11 +303,37 @@ def main():
             try:
                 draw = ImageDraw.Draw(_current_image_for_shutdown)
                 w, h = _current_image_for_shutdown.size
-                # Draw a circle in the top right corner
-                cx, cy, r = w - 35, 35, 25
-                bbox = (cx - r, cy - r, cx + r, cy + r)
-                draw.ellipse(bbox, fill="black", outline="white", width=2)
+                # Draw a circle in the top right corner of the physical (portrait) display.
+                # This corresponds to the top-left of the rotated (landscape) image buffer.
+                # Position for the cue mark.
+                cx, cy = 53, 141
+                # Radii for ellipse. In portrait view, this is ~1.5x wider than high.
+                rx, ry = 25, 38
 
+                # Generate points for an imperfect ellipse polygon
+                points = []
+                num_points = 100
+                fluctuation = 0.08  # +/- 8% radial fluctuation
+
+                for i in range(num_points):
+                    angle = i * (2 * math.pi / num_points)
+
+                    # Apply random fluctuation to the radius for this angle
+                    noise_factor = 1 + random.uniform(-fluctuation, fluctuation)
+
+                    point_x = cx + rx * math.cos(angle) * noise_factor
+                    point_y = cy + ry * math.sin(angle) * noise_factor
+                    points.append((point_x, point_y))
+
+                # Draw the filled polygon first
+                draw.polygon(points, fill="black")
+
+                # Then draw the border with fluctuating width
+                for i in range(num_points):
+                    p1 = points[i]
+                    p2 = points[(i + 1) % num_points]
+                    line_width = random.choice([1, 2, 3, 2])
+                    draw.line((p1, p2), fill="white", width=line_width)
                 board.set_image(_current_image_for_shutdown, saturation=0.6)
                 board.show()
                 time.sleep(2)  # Give screen time to refresh
