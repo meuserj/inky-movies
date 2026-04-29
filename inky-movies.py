@@ -2,8 +2,6 @@
 import io
 import json
 import os
-import signal
-import sys
 import time
 import glob
 import requests
@@ -12,11 +10,8 @@ import xml.etree.ElementTree as ET
 import threading
 from bs4 import BeautifulSoup
 from typing import Protocol, cast, NamedTuple, Optional
-from PIL import Image, ImageDraw
+from PIL import Image
 from dotenv import load_dotenv
-
-
-_current_image_for_shutdown: Optional[Image.Image] = None
 
 
 # --- 1. CONFIGURATION ---
@@ -232,22 +227,6 @@ def sync_cache(movies: list[Movie]):
             os.remove(f)
 
 # --- 6. DISPLAY ---
-def clean_display():
-    """Forces a black and white refresh cycle to clear the screen."""
-    print("🧹 Performing cleaning cycle on display...")
-    w, h = board.resolution
-    black_image = Image.new("RGB", (w, h), (0, 0, 0))
-    white_image = Image.new("RGB", (w, h), (255, 255, 255))
-    
-    board.set_image(black_image)
-    board.show()
-    time.sleep(2)
-    
-    board.set_image(white_image)
-    board.show()
-    time.sleep(2)
-    print("   ✅ Cleaning complete.")
-
 def display_movie(movie: Movie):
     local_path = os.path.join(CACHE_DIR, movie.cache_filename)
     if not os.path.exists(local_path):
@@ -276,10 +255,6 @@ def display_movie(movie: Movie):
         
         # Rotate for hardware
         final = bg.rotate(90, expand=True)
-
-        # Store a copy for the shutdown handler
-        global _current_image_for_shutdown
-        _current_image_for_shutdown = final.copy()
         
         board.set_image(final, saturation=0.6)
         board.show()
@@ -309,36 +284,6 @@ def load_last_link() -> str | None:
 
 # --- 7. DAEMON LOOP (WITH PERSISTENCE) ---
 def main():
-    # clean_display() # This seems to be causing issues, disabling for now.
-
-    # --- Signal handling for graceful shutdown ---
-    def shutdown_handler(signum, frame):
-        print("\nSIGTERM received. Drawing shutdown cue...")
-        global _current_image_for_shutdown
-        if _current_image_for_shutdown:
-            try:
-                draw = ImageDraw.Draw(_current_image_for_shutdown)
-                w, h = _current_image_for_shutdown.size
-                # Draw a circle in the top right corner of the physical (portrait) display.
-                # This corresponds to the top-left of the rotated (landscape) image buffer.
-                # Position for the cue mark.
-                cx, cy = 53, 141
-                # Radii for ellipse. In portrait view, this is ~1.5x wider than high.
-                rx, ry = 25, 38
-                bbox = (cx - rx, cy - ry, cx + rx, cy + ry)
-                draw.ellipse(bbox, fill="black", outline="white", width=2)
-                board.set_image(_current_image_for_shutdown, saturation=0.6)
-                board.show()
-                time.sleep(2)  # Give screen time to refresh
-            except Exception as e:
-                print(f"❌ Error during shutdown display: {e}")
-
-        print("👋 Shutting down.")
-        sys.exit(0)
-
-    signal.signal(signal.SIGTERM, shutdown_handler)
-    # ---
-
     print("🚀 Inky Movies Daemon Started")
     print(f"   Settings: {MAX_MOVIES} posters, {SLIDE_DURATION}s duration")
     
