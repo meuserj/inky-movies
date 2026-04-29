@@ -311,7 +311,7 @@ def load_last_link() -> str | None:
 
 # --- 7. DAEMON LOOP (WITH PERSISTENCE) ---
 def main():
-    clean_display()
+    # clean_display() # This seems to be causing issues, disabling for now.
 
     # --- Signal handling for graceful shutdown ---
     def shutdown_handler(signum, frame):
