@@ -234,6 +234,22 @@ def sync_cache(movies: list[Movie]):
             os.remove(f)
 
 # --- 6. DISPLAY ---
+def clean_display():
+    """Forces a black and white refresh cycle to clear the screen."""
+    print("🧹 Performing cleaning cycle on display...")
+    w, h = board.resolution
+    black_image = Image.new("RGB", (w, h), (0, 0, 0))
+    white_image = Image.new("RGB", (w, h), (255, 255, 255))
+    
+    board.set_image(black_image)
+    board.show()
+    time.sleep(2)
+    
+    board.set_image(white_image)
+    board.show()
+    time.sleep(2)
+    print("   ✅ Cleaning complete.")
+
 def display_movie(movie: Movie):
     local_path = os.path.join(CACHE_DIR, movie.cache_filename)
     if not os.path.exists(local_path):
@@ -295,6 +311,8 @@ def load_last_link() -> str | None:
 
 # --- 7. DAEMON LOOP (WITH PERSISTENCE) ---
 def main():
+    clean_display()
+
     # --- Signal handling for graceful shutdown ---
     def shutdown_handler(signum, frame):
         print("\nSIGTERM received. Drawing shutdown cue...")
