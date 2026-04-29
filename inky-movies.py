@@ -2,6 +2,8 @@
 import io
 import json
 import os
+import signal
+import sys
 import time
 import glob
 import requests
@@ -10,9 +12,11 @@ import xml.etree.ElementTree as ET
 import threading
 from bs4 import BeautifulSoup
 from typing import Protocol, cast, NamedTuple, Optional
-from PIL import Image
+from PIL import Image, ImageDraw
 from dotenv import load_dotenv
 
+
+_current_image_for_shutdown: Optional[Image.Image] = None
 
 
 # --- 1. CONFIGURATION ---
@@ -256,6 +260,10 @@ def display_movie(movie: Movie):
         
         # Rotate for hardware
         final = bg.rotate(90, expand=True)
+
+        # Store a copy for the shutdown handler
+        global _current_image_for_shutdown
+        _current_image_for_shutdown = final.copy()
         
         board.set_image(final, saturation=0.6)
         board.show()
@@ -285,6 +293,31 @@ def load_last_link() -> str | None:
 
 # --- 7. DAEMON LOOP (WITH PERSISTENCE) ---
 def main():
+    # --- Signal handling for graceful shutdown ---
+    def shutdown_handler(signum, frame):
+        print("\nSIGTERM received. Drawing shutdown cue...")
+        global _current_image_for_shutdown
+        if _current_image_for_shutdown:
+            try:
+                draw = ImageDraw.Draw(_current_image_for_shutdown)
+                w, h = _current_image_for_shutdown.size
+                # Draw a circle in the top right corner
+                cx, cy, r = w - 35, 35, 25
+                bbox = (cx - r, cy - r, cx + r, cy + r)
+                draw.ellipse(bbox, fill="black", outline="white", width=2)
+
+                board.set_image(_current_image_for_shutdown, saturation=0.6)
+                board.show()
+                time.sleep(2)  # Give screen time to refresh
+            except Exception as e:
+                print(f"❌ Error during shutdown display: {e}")
+
+        print("👋 Shutting down.")
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, shutdown_handler)
+    # ---
+
     print("🚀 Inky Movies Daemon Started")
     print(f"   Settings: {MAX_MOVIES} posters, {SLIDE_DURATION}s duration")
     
