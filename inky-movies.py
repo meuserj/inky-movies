@@ -56,9 +56,12 @@ class MockBoard:
 
 board: InkyBoard
 try:
-    from inky.auto import auto  # pyright: ignore[reportMissingImports]
-    board = cast(InkyBoard, auto())
-    print("✅ Hardware found")
+    from inky.inky_el133uf1 import Inky
+    board = cast(InkyBoard, Inky())
+    print("✅ Hardware found (Hardcoded 13.3\" Impression)")
+    # from inky.auto import auto  # pyright: ignore[reportMissingImports]
+    # board = cast(InkyBoard, auto())
+    # print("✅ Hardware found")
 except (ImportError, RuntimeError):
     board = MockBoard()
     print("⚠️ Inky board not found. Using Mock display.")
